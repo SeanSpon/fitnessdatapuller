@@ -20,6 +20,20 @@ export default async function Dashboard() {
     prisma.syncLog.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 5 }),
   ]);
   const healthJson = toDailyHealthJson(snapshot ? { ...snapshot, note } : null, today);
+  const hasSyncedData = Boolean(snapshot || logs.length);
+  const manualSyncCurl = String.raw`curl -X POST https://fitnessdatapuller.vercel.app/api/sync/samsung \
+  -H "Authorization: Bearer YOUR_SYNC_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date":"2026-05-06",
+    "steps":28000,
+    "active_calories":900,
+    "sleep_hours":7.4,
+    "sleep_quality":"good",
+    "weight_lbs":153,
+    "resting_hr":58,
+    "ai_summary":"Manual test sync."
+  }'`;
 
   return (
     <main className="min-h-screen bg-ink px-6 py-8 text-white">
@@ -60,6 +74,22 @@ export default async function Dashboard() {
                 <li>Cronometer CSV posts to <code className="text-glow">/api/import/cronometer</code>.</li>
               </ol>
             </div>
+
+            {!hasSyncedData ? (
+              <div className="rounded-3xl border border-glow/30 bg-glow/10 p-6">
+                <h2 className="text-xl font-bold">Database is ready — send a test sync</h2>
+                <p className="mt-3 text-slate-200">
+                  If login redirects to this dashboard but metrics are blank, the app is working and waiting for imported data.
+                  Post a manual Samsung payload, then refresh this page.
+                </p>
+                <pre className="mt-4 overflow-auto rounded-2xl bg-black/50 p-4 text-xs text-emerald-100">
+                  {manualSyncCurl}
+                </pre>
+                <p className="mt-3 text-sm text-slate-300">
+                  Expected after refresh: Steps 28000, Sleep 7.4h, body metrics in the JSON, and a Samsung sync log.
+                </p>
+              </div>
+            ) : null}
 
             <div className="rounded-3xl border border-white/10 bg-panel p-6">
               <h2 className="text-xl font-bold">Latest sync logs</h2>
