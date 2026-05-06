@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import Papa from "papaparse";
 import { prisma } from "@/lib/prisma";
-import { parseDateOnly } from "@/lib/dates";
-import { requireUserId } from "@/lib/session";
+import { parseDateOnly, parseOptionalDateTime } from "@/lib/dates";
+import { requireSyncUserId } from "@/lib/api-auth";
 
 type CronometerRow = Record<string, string>;
 
@@ -14,7 +14,7 @@ function numberFrom(row: CronometerRow, keys: string[]) {
 
 export async function POST(request: Request) {
   try {
-    const userId = await requireUserId();
+    const userId = await requireSyncUserId(request);
     const csv = await request.text();
     const parsed = Papa.parse<CronometerRow>(csv, { header: true, skipEmptyLines: true });
 
@@ -26,6 +26,7 @@ export async function POST(request: Request) {
     const entries = await prisma.$transaction(
       rows.map((row) => {
         const date = parseDateOnly(row.Date ?? row.date);
+        const sourceUpdatedAt = parseOptionalDateTime(row.source_updated_at ?? row.SourceUpdatedAt ?? row["Source Updated At"]);
         return prisma.nutritionEntry.create({
           data: {
             userId,
@@ -36,6 +37,8 @@ export async function POST(request: Request) {
             carbsG: numberFrom(row, ["Carbs", "Carbs (g)", "Carbohydrates (g)", "carbs_g"]),
             fatG: numberFrom(row, ["Fat", "Fat (g)", "fat_g"]),
             raw: row,
+            sourceUpdatedAt,
+            syncedAt: new Date(),
           },
         });
       }),
@@ -45,6 +48,7 @@ export async function POST(request: Request) {
     await Promise.all(
       dates.map(async (dateString) => {
         const date = parseDateOnly(dateString);
+        const syncedAt = new Date();
         const totals = await prisma.nutritionEntry.aggregate({
           where: { userId, date },
           _sum: { calories: true, proteinG: true, carbsG: true, fatG: true },
@@ -57,6 +61,7 @@ export async function POST(request: Request) {
             proteinG: totals._sum.proteinG,
             carbsG: totals._sum.carbsG,
             fatG: totals._sum.fatG,
+            syncedAt,
           },
           create: {
             userId,
@@ -65,6 +70,7 @@ export async function POST(request: Request) {
             proteinG: totals._sum.proteinG,
             carbsG: totals._sum.carbsG,
             fatG: totals._sum.fatG,
+            syncedAt,
           },
         });
       }),

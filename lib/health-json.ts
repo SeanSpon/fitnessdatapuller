@@ -29,6 +29,11 @@ export function toDailyHealthJson(snapshot: SnapshotWithNote | null, date: Date)
       total_sets: snapshot?.totalSets ?? null,
       volume_lbs: snapshot?.volumeLbs ?? null,
     },
+    ai_summary: snapshot?.aiSummary ?? null,
+    metadata: {
+      source_updated_at: snapshot?.sourceUpdatedAt?.toISOString() ?? null,
+      synced_at: snapshot?.syncedAt?.toISOString() ?? null,
+    },
     notes: {
       weed: snapshot?.note?.weed ?? false,
       acne: snapshot?.note?.acne ?? null,

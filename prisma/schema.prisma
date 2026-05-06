@@ -77,6 +77,9 @@ model DailyHealthSnapshot {
   totalSets      Int?
   volumeLbs      Float?
   sourcePayload   Json?
+  sourceUpdatedAt DateTime?
+  syncedAt       DateTime @default(now())
+  aiSummary      String?
   updatedAt      DateTime @updatedAt
   createdAt      DateTime @default(now())
 
@@ -97,6 +100,8 @@ model NutritionEntry {
   fatG      Float?
   source    String   @default("cronometer")
   raw        Json?
+  sourceUpdatedAt DateTime?
+  syncedAt   DateTime @default(now())
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -113,6 +118,8 @@ model WorkoutSession {
   durationM Int?
   volumeLbs Float?
   raw       Json?
+  sourceUpdatedAt DateTime?
+  syncedAt  DateTime     @default(now())
   sets      WorkoutSet[]
   createdAt DateTime     @default(now())
 
@@ -141,6 +148,8 @@ model SleepSession {
   quality   String?
   source    String   @default("samsung")
   raw       Json?
+  sourceUpdatedAt DateTime?
+  syncedAt  DateTime @default(now())
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -156,6 +165,8 @@ model BodyMetric {
   restingHr Int?
   source    String   @default("samsung")
   raw       Json?
+  sourceUpdatedAt DateTime?
+  syncedAt  DateTime @default(now())
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -34,7 +34,7 @@ export default async function Home() {
         ) : (
           <form action={login} className="grid max-w-md gap-3 rounded-2xl border border-white/10 bg-black/20 p-4">
             <input name="email" type="email" placeholder="Private email" className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 outline-none" required />
-            <input name="password" type="password" placeholder="AUTH_SECRET password" className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 outline-none" required />
+            <input name="password" type="password" placeholder="Admin password" className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 outline-none" required />
             <button className="rounded-xl bg-glow px-4 py-3 font-bold text-ink">Login</button>
           </form>
         )}
