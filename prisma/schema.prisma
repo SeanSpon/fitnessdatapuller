@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  dailySnapshots  DailyHealthSnapshot[]
+  nutritionEntries NutritionEntry[]
+  workoutSessions WorkoutSession[]
+  sleepSessions   SleepSession[]
+  bodyMetrics     BodyMetric[]
+  syncLogs        SyncLog[]
+  notes           DailyNote[]
+  syncRequests    SyncRequest[]
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+model DailyHealthSnapshot {
+  id             String   @id @default(cuid())
+  userId         String
+  date           DateTime
+  calories       Int?
+  proteinG       Float?
+  carbsG         Float?
+  fatG           Float?
+  steps          Int?
+  activeCalories Int?
+  sleepHours     Float?
+  sleepQuality   String?
+  weightLbs      Float?
+  restingHr      Int?
+  workoutName    String?
+  totalSets      Int?
+  volumeLbs      Float?
+  sourcePayload   Json?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model NutritionEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  foodName  String
+  calories  Float?
+  proteinG  Float?
+  carbsG    Float?
+  fatG      Float?
+  source    String   @default("cronometer")
+  raw        Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+model WorkoutSession {
+  id        String       @id @default(cuid())
+  userId    String
+  date      DateTime
+  name      String
+  source    String       @default("hevy")
+  durationM Int?
+  volumeLbs Float?
+  raw       Json?
+  sets      WorkoutSet[]
+  createdAt DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+model WorkoutSet {
+  id               String @id @default(cuid())
+  workoutSessionId String
+  exerciseName     String
+  setNumber        Int
+  reps             Int?
+  weightLbs        Float?
+  rpe              Float?
+
+  workoutSession WorkoutSession @relation(fields: [workoutSessionId], references: [id], onDelete: Cascade)
+}
+
+model SleepSession {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  hours     Float
+  quality   String?
+  source    String   @default("samsung")
+  raw       Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+model BodyMetric {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  weightLbs Float?
+  restingHr Int?
+  source    String   @default("samsung")
+  raw       Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+model DailyNote {
+  id        String   @id @default(cuid())
+  userId    String
+  date      DateTime
+  weed      Boolean  @default(false)
+  acne      String?
+  mood      String?
+  soreness  String?
+  note      String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
+model SyncLog {
+  id        String   @id @default(cuid())
+  userId    String
+  source    String
+  status    String
+  message   String?
+  payload   Json?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model SyncRequest {
+  id          String    @id @default(cuid())
+  userId      String
+  status      String    @default("pending")
+  requestedAt DateTime  @default(now())
+  completedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
