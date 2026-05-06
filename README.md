@@ -13,6 +13,33 @@ Simple read-only health data hub for Samsung Health, Cronometer, and Hevy-style 
 7. Send Hevy workout history to `POST /api/import/hevy` when you are ready.
 8. Ask for your data via `GET /api/health/today` or `GET /api/health/week`.
 
+## First manual test sync
+
+After login succeeds and `/dashboard` loads, blank metrics usually mean the database tables exist but no health data has been synced yet. Send a manual Samsung test payload with your deployed domain and `SYNC_API_KEY`, then refresh `/dashboard`:
+
+```bash
+curl -X POST https://fitnessdatapuller.vercel.app/api/sync/samsung \
+  -H "Authorization: Bearer YOUR_SYNC_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "date":"2026-05-06",
+    "steps":28000,
+    "active_calories":900,
+    "sleep_hours":7.4,
+    "sleep_quality":"good",
+    "weight_lbs":153,
+    "resting_hr":58,
+    "ai_summary":"Manual test sync."
+  }'
+```
+
+Expected dashboard values after refresh:
+
+- Steps: `28000`
+- Sleep: `7.4h`
+- Weight and resting heart rate in the structured JSON
+- A successful Samsung sync log
+
 ## MVP endpoints
 
 ### `POST /api/sync/samsung`
