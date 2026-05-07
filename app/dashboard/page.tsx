@@ -15,7 +15,7 @@ export default async function Dashboard() {
 
   const today = startOfUtcDay();
   const [snapshot, note, logs] = await Promise.all([
-    prisma.dailyHealthSnapshot.findUnique({ where: { userId_date: { userId, date: today } } }),
+    prisma.dailyHealthSnapshot.findFirst({ where: { userId, date: today }, orderBy: { syncedAt: "desc" } }),
     prisma.dailyNote.findUnique({ where: { userId_date: { userId, date: today } } }),
     prisma.syncLog.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 5 }),
   ]);
@@ -25,7 +25,6 @@ export default async function Dashboard() {
   -H "Authorization: Bearer YOUR_SYNC_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "date":"2026-05-06",
     "steps":28000,
     "active_calories":900,
     "sleep_hours":7.4,

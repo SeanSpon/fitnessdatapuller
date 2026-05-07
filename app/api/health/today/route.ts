@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     const userId = await requireSyncUserId(request);
     const date = startOfUtcDay();
     const [snapshot, note] = await Promise.all([
-      prisma.dailyHealthSnapshot.findUnique({ where: { userId_date: { userId, date } } }),
+      prisma.dailyHealthSnapshot.findFirst({ where: { userId, date }, orderBy: { syncedAt: "desc" } }),
       prisma.dailyNote.findUnique({ where: { userId_date: { userId, date } } }),
     ]);
 

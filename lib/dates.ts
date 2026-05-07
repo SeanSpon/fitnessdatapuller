@@ -3,7 +3,13 @@ export function startOfUtcDay(input = new Date()) {
 }
 
 export function parseDateOnly(value: string) {
-  const [year, month, day] = value.split("-").map(Number);
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (!match) {
+    return new Date(Number.NaN);
+  }
+
+  const [, year, month, day] = match.map(Number);
   return new Date(Date.UTC(year, month - 1, day));
 }
 
