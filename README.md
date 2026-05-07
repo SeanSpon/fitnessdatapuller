@@ -22,7 +22,6 @@ curl -X POST https://fitnessdatapuller.vercel.app/api/sync/samsung \
   -H "Authorization: Bearer YOUR_SYNC_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "date":"2026-05-06",
     "steps":28000,
     "active_calories":900,
     "sleep_hours":7.4,
@@ -44,11 +43,10 @@ Expected dashboard values after refresh:
 
 ### `POST /api/sync/samsung`
 
-Manual phone sync payload. Send it with `Authorization: Bearer $SYNC_API_KEY`:
+Manual phone sync payload. Send it with `Authorization: Bearer $SYNC_API_KEY`; if `date` is omitted, the API writes to the current UTC day:
 
 ```json
 {
-  "date": "2026-05-06",
   "steps": 28000,
   "active_calories": 900,
   "sleep_hours": 7.4,
