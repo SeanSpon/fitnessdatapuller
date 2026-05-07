@@ -22,7 +22,6 @@ curl -X POST https://fitnessdatapuller.vercel.app/api/sync/samsung \
   -H "Authorization: Bearer YOUR_SYNC_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "date":"2026-05-06",
     "steps":28000,
     "active_calories":900,
     "sleep_hours":7.4,
@@ -38,17 +37,17 @@ Expected dashboard values after refresh:
 - Steps: `28000`
 - Sleep: `7.4h`
 - Weight and resting heart rate in the structured JSON
-- A successful Samsung sync log
+- Health Connect source availability shows found/missing for steps, active calories, sleep, heart rate, and weight
+- A successful Samsung sync log with raw and normalized payload values
 
 ## MVP endpoints
 
 ### `POST /api/sync/samsung`
 
-Manual phone sync payload. Send it with `Authorization: Bearer $SYNC_API_KEY`:
+Manual phone sync payload. Send it with `Authorization: Bearer $SYNC_API_KEY`; if `date` is omitted, the API writes to the current UTC day:
 
 ```json
 {
-  "date": "2026-05-06",
   "steps": 28000,
   "active_calories": 900,
   "sleep_hours": 7.4,
@@ -58,6 +57,17 @@ Manual phone sync payload. Send it with `Authorization: Bearer $SYNC_API_KEY`:
   "source_updated_at": "2026-05-06T22:30:00.000Z",
   "ai_summary": "High activity day with solid sleep."
 }
+```
+
+The response includes the saved `snapshot`, a `source_availability` checklist, and debug fields for the sync user ID and date used. Missing Samsung values are stored as `null` instead of `0`, so a true zero can be distinguished from unavailable Health Connect data. The server accepts top-level values, nested `activity`/`sleep`/`body` values, common wrapper objects like `data` or `metrics`, numeric strings, and Health Connect-style aliases such as `step_count`, `active_calories_burned`, `resting_heart_rate`, and `weight_kg`.
+
+### `GET /api/debug/snapshots`
+
+Temporary persistence debugging endpoint. Send it with `Authorization: Bearer $SYNC_API_KEY` to inspect the latest 10 admin `DailyHealthSnapshot` rows:
+
+```bash
+curl https://fitnessdatapuller.vercel.app/api/debug/snapshots \
+  -H "Authorization: Bearer YOUR_SYNC_API_KEY"
 ```
 
 ### `POST /api/import/cronometer`

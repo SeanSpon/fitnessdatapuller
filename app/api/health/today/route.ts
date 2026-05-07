@@ -7,11 +7,14 @@ import { requireSyncUserId } from "@/lib/api-auth";
 export async function GET(request: Request) {
   try {
     const userId = await requireSyncUserId(request);
-    const date = startOfUtcDay();
-    const [snapshot, note] = await Promise.all([
-      prisma.dailyHealthSnapshot.findUnique({ where: { userId_date: { userId, date } } }),
-      prisma.dailyNote.findUnique({ where: { userId_date: { userId, date } } }),
+    const today = startOfUtcDay();
+    const [todaySnapshot, latestSnapshot] = await Promise.all([
+      prisma.dailyHealthSnapshot.findFirst({ where: { userId, date: today }, orderBy: { syncedAt: "desc" } }),
+      prisma.dailyHealthSnapshot.findFirst({ where: { userId }, orderBy: [{ date: "desc" }, { syncedAt: "desc" }] }),
     ]);
+    const snapshot = todaySnapshot ?? latestSnapshot;
+    const date = snapshot?.date ?? today;
+    const note = await prisma.dailyNote.findUnique({ where: { userId_date: { userId, date } } });
 
     return NextResponse.json(toDailyHealthJson(snapshot ? { ...snapshot, note } : null, date));
   } catch {
