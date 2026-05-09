@@ -210,10 +210,27 @@ export async function POST(request: Request) {
   const firstWorkoutName = normalized.workouts.find((w) => w.title && w.title.trim().length > 0)?.title ?? null;
   const workoutCountToday = normalized.workouts.length;
 
-  // Choose calories: explicit nutrition.calories wins, else fall back to totalCalories from Health Connect.
-  const snapshotCalories = pickNumber(normalized.nutrition.calories, normalized.totalCalories);
+  // Food calories ONLY come from explicit nutrition.calories (Cronometer / NutritionRecord).
+  // totalCalories is TDEE/burn from Health Connect — different number, different column.
+  const foodCalories = normalized.nutrition.calories;
+  const burnedCalories = normalized.totalCalories;
 
   try {
+    // One-shot cleanup: prior versions of this route wrote totalCalories (burn) into
+    // DailyHealthSnapshot.calories. Move those into caloriesBurned and clear calories.
+    // Idempotent: only matches rows that still look like the old bug.
+    await prisma.$executeRaw`
+      UPDATE "DailyHealthSnapshot"
+      SET "caloriesBurned" = COALESCE("caloriesBurned", "calories"),
+          "calories" = NULL
+      WHERE "userId" = ${userId}
+        AND "caloriesBurned" IS NULL
+        AND "calories" IS NOT NULL
+        AND "sourcePayload" IS NOT NULL
+        AND ("sourcePayload"->>'totalCalories') IS NOT NULL
+        AND ROUND(("sourcePayload"->>'totalCalories')::numeric) = "calories"
+    `;
+
     const snapshot = await prisma.dailyHealthSnapshot.upsert({
       where: { userId_date: { userId, date: normalized.date } },
       update: {
@@ -223,7 +240,8 @@ export async function POST(request: Request) {
         sleepQuality: normalized.sleepQuality,
         weightLbs: normalized.weightLbs,
         restingHr: normalized.restingHr,
-        calories: snapshotCalories !== undefined ? Math.round(snapshotCalories) : undefined,
+        calories: foodCalories !== undefined ? Math.round(foodCalories) : undefined,
+        caloriesBurned: burnedCalories !== undefined ? Math.round(burnedCalories) : undefined,
         proteinG: normalized.nutrition.proteinG,
         carbsG: normalized.nutrition.carbsG,
         fatG: normalized.nutrition.fatG,
@@ -243,7 +261,8 @@ export async function POST(request: Request) {
         sleepQuality: normalized.sleepQuality,
         weightLbs: normalized.weightLbs,
         restingHr: normalized.restingHr,
-        calories: snapshotCalories !== undefined ? Math.round(snapshotCalories) : undefined,
+        calories: foodCalories !== undefined ? Math.round(foodCalories) : undefined,
+        caloriesBurned: burnedCalories !== undefined ? Math.round(burnedCalories) : undefined,
         proteinG: normalized.nutrition.proteinG,
         carbsG: normalized.nutrition.carbsG,
         fatG: normalized.nutrition.fatG,
@@ -334,7 +353,7 @@ export async function POST(request: Request) {
         userId,
         source: "samsung",
         status: "success",
-        message: `snapshot ok · workouts=${workoutsUpserted} · cal=${snapshotCalories ?? "—"} · steps=${normalized.steps ?? "—"}`,
+        message: `snapshot ok · workouts=${workoutsUpserted} · food=${foodCalories ?? "—"} · burned=${burnedCalories ?? "—"} · steps=${normalized.steps ?? "—"}`,
         payload: cleanPayload,
       },
     });
@@ -343,10 +362,11 @@ export async function POST(request: Request) {
       ok: true,
       snapshotId: snapshot.id,
       workoutsUpserted,
-      caloriesStored: snapshotCalories ?? null,
+      foodCalories: foodCalories ?? null,
+      caloriesBurned: burnedCalories ?? null,
       proteinStored: normalized.nutrition.proteinG ?? null,
       stepsStored: normalized.steps ?? null,
-      hadNutrition: Boolean(payload.nutrition),
+      hadNutrition: Boolean(payload.nutrition && Object.values(payload.nutrition).some((v) => v != null)),
     });
   } catch (err) {
     const message = err instanceof Error ? `${err.name}: ${err.message}` : "unknown error";

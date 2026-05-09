@@ -64,6 +64,7 @@ model DailyHealthSnapshot {
   userId         String
   date           DateTime
   calories       Int?
+  caloriesBurned Int?
   proteinG       Float?
   carbsG         Float?
   fatG           Float?
