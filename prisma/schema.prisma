@@ -110,21 +110,25 @@ model NutritionEntry {
 }
 
 model WorkoutSession {
-  id        String       @id @default(cuid())
-  userId    String
-  date      DateTime
-  name      String
-  source    String       @default("hevy")
-  durationM Int?
-  volumeLbs Float?
-  raw       Json?
+  id         String       @id @default(cuid())
+  userId     String
+  date       DateTime
+  name       String
+  source     String       @default("hevy")
+  externalId String?
+  startTime  DateTime?
+  endTime    DateTime?
+  durationM  Int?
+  volumeLbs  Float?
+  raw        Json?
   sourceUpdatedAt DateTime?
-  syncedAt  DateTime     @default(now())
-  sets      WorkoutSet[]
-  createdAt DateTime     @default(now())
+  syncedAt   DateTime     @default(now())
+  sets       WorkoutSet[]
+  createdAt  DateTime     @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, externalId])
   @@index([userId, date])
 }
 
