@@ -12,33 +12,39 @@ export default async function Dashboard() {
     redirect("/");
   }
 
-  const today = startOfUtcDay();
-  const sevenDaysAgo = new Date(today);
+  // Use the most-recently-synced day as "today" so a 9pm sync (which the phone
+  // tags as the local day) doesn't disappear after UTC rolls midnight.
+  const latestSnapshot = await prisma.dailyHealthSnapshot.findFirst({
+    where: { userId },
+    orderBy: { date: "desc" },
+  });
+  const viewDate = latestSnapshot?.date ?? startOfUtcDay();
+  const sevenDaysAgo = new Date(viewDate);
   sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
 
   const [snapshot, note, logs, todayWorkouts, todayNutrition, weekSnapshots] = await Promise.all([
     prisma.dailyHealthSnapshot.findFirst({
-      where: { userId, date: today },
+      where: { userId, date: viewDate },
       orderBy: { syncedAt: "desc" },
     }),
-    prisma.dailyNote.findUnique({ where: { userId_date: { userId, date: today } } }),
+    prisma.dailyNote.findUnique({ where: { userId_date: { userId, date: viewDate } } }),
     prisma.syncLog.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
       take: 8,
     }),
     prisma.workoutSession.findMany({
-      where: { userId, date: today },
+      where: { userId, date: viewDate },
       orderBy: { startTime: "asc" },
       include: { sets: true },
     }),
     prisma.nutritionEntry.findMany({
-      where: { userId, date: today },
+      where: { userId, date: viewDate },
       orderBy: { syncedAt: "desc" },
       take: 30,
     }),
     prisma.dailyHealthSnapshot.findMany({
-      where: { userId, date: { gte: sevenDaysAgo, lte: today } },
+      where: { userId, date: { gte: sevenDaysAgo, lte: viewDate } },
       orderBy: { date: "asc" },
     }),
   ]);
@@ -63,11 +69,11 @@ export default async function Dashboard() {
         <header className="flex flex-col justify-between gap-4 rounded-2xl border border-white/10 bg-panel p-5 sm:flex-row sm:items-center">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-glow">SeanOS Health Hub</p>
-            <h1 className="mt-1 text-2xl font-bold text-white sm:text-3xl">Today · {formatDateOnly(today)}</h1>
+            <h1 className="mt-1 text-2xl font-bold text-white sm:text-3xl">{formatDateOnly(viewDate)}</h1>
             <p className="mt-1 text-sm text-slate-400">
               {snapshot?.syncedAt
                 ? `Last sync ${new Date(snapshot.syncedAt).toLocaleString()}`
-                : "No sync yet today."}
+                : "No data for the most recent day yet."}
             </p>
           </div>
           <form action={logout}>
@@ -82,7 +88,6 @@ export default async function Dashboard() {
             label="Food calories"
             value={calories !== null ? calories.toLocaleString() : "—"}
             unit="kcal"
-            hint="From Cronometer CSV"
           />
           <Metric label="Protein" value={protein !== null ? Math.round(protein).toString() : "—"} unit="g" />
           <Metric label="Steps" value={steps !== null ? steps.toLocaleString() : "—"} />
@@ -104,7 +109,7 @@ export default async function Dashboard() {
 
         <section className="grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
           <div className="space-y-5">
-            <Card title="Today's workouts" subtitle="From Health Connect (Hevy + Samsung Health)">
+            <Card title="Workouts" subtitle="From Health Connect (Hevy + Samsung Health)">
               {todayWorkouts.length === 0 ? (
                 <p className="text-sm text-slate-400">
                   Nothing yet. When Hevy writes a session to Health Connect and the phone syncs, it shows up here.
@@ -153,7 +158,7 @@ export default async function Dashboard() {
               )}
             </Card>
 
-            <Card title="Today's nutrition" subtitle="From Cronometer CSV import">
+            <Card title="Nutrition entries" subtitle="From Health Connect or Cronometer CSV">
               {todayNutrition.length === 0 ? (
                 <p className="text-sm text-slate-400">
                   No nutrition entries today. Upload the Cronometer CSV below — Health Connect doesn&apos;t share food
