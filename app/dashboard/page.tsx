@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { logout } from "@/app/actions";
+import { logout, uploadCronometerCsv } from "@/app/actions";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDateOnly, startOfUtcDay } from "@/lib/dates";
@@ -44,6 +44,7 @@ export default async function Dashboard() {
   ]);
 
   const calories = snapshot?.calories ?? null;
+  const burned = snapshot?.caloriesBurned ?? null;
   const protein = snapshot?.proteinG ?? null;
   const carbs = snapshot?.carbsG ?? null;
   const fat = snapshot?.fatG ?? null;
@@ -77,7 +78,12 @@ export default async function Dashboard() {
         </header>
 
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Metric label="Calories" value={calories !== null ? calories.toLocaleString() : "—"} unit="kcal" />
+          <Metric
+            label="Food calories"
+            value={calories !== null ? calories.toLocaleString() : "—"}
+            unit="kcal"
+            hint="From Cronometer CSV"
+          />
           <Metric label="Protein" value={protein !== null ? Math.round(protein).toString() : "—"} unit="g" />
           <Metric label="Steps" value={steps !== null ? steps.toLocaleString() : "—"} />
           <Metric label="Sleep" value={sleep !== null ? sleep.toFixed(1) : "—"} unit="h" />
@@ -87,10 +93,11 @@ export default async function Dashboard() {
           <Metric label="Carbs" value={carbs !== null ? Math.round(carbs).toString() : "—"} unit="g" subtle />
           <Metric label="Fat" value={fat !== null ? Math.round(fat).toString() : "—"} unit="g" subtle />
           <Metric
-            label="Active cal"
-            value={activeCal !== null ? activeCal.toLocaleString() : "—"}
+            label="Burned"
+            value={burned !== null ? burned.toLocaleString() : "—"}
             unit="kcal"
             subtle
+            hint={activeCal !== null ? `${activeCal.toLocaleString()} active` : undefined}
           />
           <Metric label="Workouts" value={workoutCount.toString()} subtle />
         </section>
@@ -148,15 +155,10 @@ export default async function Dashboard() {
 
             <Card title="Today's nutrition" subtitle="From Cronometer CSV import">
               {todayNutrition.length === 0 ? (
-                <div className="text-sm text-slate-400">
-                  <p>No nutrition entries today.</p>
-                  {(protein || calories) && (
-                    <p className="mt-2">
-                      Phone reported daily totals: {calories ?? "—"} kcal · {protein ?? "—"}g protein. Import the
-                      Cronometer CSV to see individual foods.
-                    </p>
-                  )}
-                </div>
+                <p className="text-sm text-slate-400">
+                  No nutrition entries today. Upload the Cronometer CSV below — Health Connect doesn&apos;t share food
+                  macros.
+                </p>
               ) : (
                 <ul className="divide-y divide-white/5">
                   {todayNutrition.map((n) => (
@@ -172,6 +174,28 @@ export default async function Dashboard() {
                   ))}
                 </ul>
               )}
+              <form
+                action={uploadCronometerCsv}
+                encType="multipart/form-data"
+                className="mt-4 flex flex-col gap-2 rounded-xl border border-white/5 bg-white/[0.03] p-3 sm:flex-row sm:items-center"
+              >
+                <input
+                  type="file"
+                  name="csv"
+                  accept=".csv,text/csv"
+                  required
+                  className="text-xs text-slate-300 file:mr-3 file:rounded-md file:border-0 file:bg-glow/20 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-glow"
+                />
+                <button
+                  type="submit"
+                  className="rounded-md bg-glow px-3 py-1.5 text-xs font-semibold text-ink hover:bg-glow/80"
+                >
+                  Upload CSV
+                </button>
+              </form>
+              <p className="mt-2 text-[11px] text-slate-500">
+                Cronometer → Settings → Account → Export Data → daily nutrition CSV.
+              </p>
             </Card>
 
             <Card title="Last 7 days">
@@ -179,11 +203,12 @@ export default async function Dashboard() {
                 <p className="text-sm text-slate-400">No daily snapshots yet.</p>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[480px] text-left text-sm">
+                  <table className="w-full min-w-[560px] text-left text-sm">
                     <thead className="text-xs uppercase tracking-wide text-slate-500">
                       <tr>
                         <th className="py-2 pr-3">Date</th>
-                        <th className="py-2 pr-3 text-right">Cal</th>
+                        <th className="py-2 pr-3 text-right">Food</th>
+                        <th className="py-2 pr-3 text-right">Burned</th>
                         <th className="py-2 pr-3 text-right">Protein</th>
                         <th className="py-2 pr-3 text-right">Steps</th>
                         <th className="py-2 pr-3 text-right">Sleep</th>
@@ -195,6 +220,9 @@ export default async function Dashboard() {
                         <tr key={s.id} className="text-slate-200">
                           <td className="py-2 pr-3 font-medium">{formatDateOnly(s.date)}</td>
                           <td className="py-2 pr-3 text-right font-mono">{s.calories ?? "—"}</td>
+                          <td className="py-2 pr-3 text-right font-mono text-slate-400">
+                            {s.caloriesBurned ?? "—"}
+                          </td>
                           <td className="py-2 pr-3 text-right font-mono">
                             {s.proteinG ? Math.round(s.proteinG) : "—"}
                           </td>
@@ -283,11 +311,13 @@ function Metric({
   value,
   unit,
   subtle,
+  hint,
 }: {
   label: string;
   value: string;
   unit?: string;
   subtle?: boolean;
+  hint?: string;
 }) {
   return (
     <div
@@ -300,6 +330,7 @@ function Metric({
         <span className={`text-2xl font-bold ${subtle ? "text-slate-100" : "text-glow"}`}>{value}</span>
         {unit ? <span className="text-sm text-slate-400">{unit}</span> : null}
       </p>
+      {hint ? <p className="mt-1 text-[11px] text-slate-500">{hint}</p> : null}
     </div>
   );
 }
