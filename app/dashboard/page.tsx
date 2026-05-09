@@ -3,7 +3,6 @@ import { logout } from "@/app/actions";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { formatDateOnly, startOfUtcDay } from "@/lib/dates";
-import { toDailyHealthJson } from "@/lib/health-json";
 
 export default async function Dashboard() {
   const session = await auth();
@@ -14,94 +13,264 @@ export default async function Dashboard() {
   }
 
   const today = startOfUtcDay();
-  const [snapshot, note, logs] = await Promise.all([
-    prisma.dailyHealthSnapshot.findFirst({ where: { userId, date: today }, orderBy: { syncedAt: "desc" } }),
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+
+  const [snapshot, note, logs, todayWorkouts, todayNutrition, weekSnapshots] = await Promise.all([
+    prisma.dailyHealthSnapshot.findFirst({
+      where: { userId, date: today },
+      orderBy: { syncedAt: "desc" },
+    }),
     prisma.dailyNote.findUnique({ where: { userId_date: { userId, date: today } } }),
-    prisma.syncLog.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 5 }),
+    prisma.syncLog.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+    }),
+    prisma.workoutSession.findMany({
+      where: { userId, date: today },
+      orderBy: { startTime: "asc" },
+      include: { sets: true },
+    }),
+    prisma.nutritionEntry.findMany({
+      where: { userId, date: today },
+      orderBy: { syncedAt: "desc" },
+      take: 30,
+    }),
+    prisma.dailyHealthSnapshot.findMany({
+      where: { userId, date: { gte: sevenDaysAgo, lte: today } },
+      orderBy: { date: "asc" },
+    }),
   ]);
-  const healthJson = toDailyHealthJson(snapshot ? { ...snapshot, note } : null, today);
-  const hasSyncedData = Boolean(snapshot || logs.length);
-  const manualSyncCurl = String.raw`curl -X POST https://fitnessdatapuller.vercel.app/api/sync/samsung \
-  -H "Authorization: Bearer YOUR_SYNC_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "steps":28000,
-    "active_calories":900,
-    "sleep_hours":7.4,
-    "sleep_quality":"good",
-    "weight_lbs":153,
-    "resting_hr":58,
-    "ai_summary":"Manual test sync."
-  }'`;
+
+  const calories = snapshot?.calories ?? null;
+  const protein = snapshot?.proteinG ?? null;
+  const carbs = snapshot?.carbsG ?? null;
+  const fat = snapshot?.fatG ?? null;
+  const steps = snapshot?.steps ?? null;
+  const activeCal = snapshot?.activeCalories ?? null;
+  const sleep = snapshot?.sleepHours ?? null;
+  const restingHr = snapshot?.restingHr ?? null;
+  const weight = snapshot?.weightLbs ?? null;
+  const workoutCount = todayWorkouts.length;
+
+  const hasAnyData = Boolean(snapshot || logs.length || todayWorkouts.length || todayNutrition.length);
 
   return (
-    <main className="min-h-screen bg-ink px-6 py-8 text-white">
+    <main className="min-h-screen bg-ink px-4 py-8 text-slate-100 sm:px-6">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <header className="flex flex-col justify-between gap-4 rounded-3xl border border-white/10 bg-panel p-6 md:flex-row md:items-center">
+        <header className="flex flex-col justify-between gap-4 rounded-2xl border border-white/10 bg-panel p-5 sm:flex-row sm:items-center">
           <div>
-            <p className="text-sm uppercase tracking-[0.35em] text-glow">Private dashboard</p>
-            <h1 className="mt-2 text-3xl font-black">Today: {formatDateOnly(today)}</h1>
-            <p className="mt-2 text-slate-300">Read-only MVP. Sync manually first; background sync can come later.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-glow">SeanOS Health Hub</p>
+            <h1 className="mt-1 text-2xl font-bold text-white sm:text-3xl">Today · {formatDateOnly(today)}</h1>
+            <p className="mt-1 text-sm text-slate-400">
+              {snapshot?.syncedAt
+                ? `Last sync ${new Date(snapshot.syncedAt).toLocaleString()}`
+                : "No sync yet today."}
+            </p>
           </div>
           <form action={logout}>
-            <button className="rounded-full border border-white/15 px-5 py-3 font-semibold text-slate-200">Logout</button>
+            <button className="rounded-lg border border-white/15 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-white/10">
+              Logout
+            </button>
           </form>
         </header>
 
-        <section className="grid gap-4 md:grid-cols-4">
-          <Metric label="Calories" value={healthJson.nutrition.calories ?? "—"} />
-          <Metric label="Protein" value={healthJson.nutrition.protein_g ? `${healthJson.nutrition.protein_g}g` : "—"} />
-          <Metric label="Steps" value={healthJson.activity.steps ?? "—"} />
-          <Metric label="Sleep" value={healthJson.sleep.hours ? `${healthJson.sleep.hours}h` : "—"} />
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Metric label="Calories" value={calories !== null ? calories.toLocaleString() : "—"} unit="kcal" />
+          <Metric label="Protein" value={protein !== null ? Math.round(protein).toString() : "—"} unit="g" />
+          <Metric label="Steps" value={steps !== null ? steps.toLocaleString() : "—"} />
+          <Metric label="Sleep" value={sleep !== null ? sleep.toFixed(1) : "—"} unit="h" />
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="rounded-3xl border border-white/10 bg-panel p-6">
-            <h2 className="text-xl font-bold">Structured daily JSON</h2>
-            <pre className="mt-4 overflow-auto rounded-2xl bg-black/40 p-4 text-sm text-emerald-100">
-              {JSON.stringify(healthJson, null, 2)}
-            </pre>
+        <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Metric label="Carbs" value={carbs !== null ? Math.round(carbs).toString() : "—"} unit="g" subtle />
+          <Metric label="Fat" value={fat !== null ? Math.round(fat).toString() : "—"} unit="g" subtle />
+          <Metric
+            label="Active cal"
+            value={activeCal !== null ? activeCal.toLocaleString() : "—"}
+            unit="kcal"
+            subtle
+          />
+          <Metric label="Workouts" value={workoutCount.toString()} subtle />
+        </section>
+
+        <section className="grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
+          <div className="space-y-5">
+            <Card title="Today's workouts" subtitle="From Health Connect (Hevy + Samsung Health)">
+              {todayWorkouts.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  Nothing yet. When Hevy writes a session to Health Connect and the phone syncs, it shows up here.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {todayWorkouts.map((w) => {
+                    const start = w.startTime ? new Date(w.startTime) : null;
+                    const end = w.endTime ? new Date(w.endTime) : null;
+                    return (
+                      <li key={w.id} className="rounded-xl border border-white/5 bg-white/5 p-4">
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <p className="text-base font-semibold text-white">{w.name}</p>
+                          <span className="rounded-md bg-glow/15 px-2 py-0.5 text-xs font-medium text-glow">
+                            {w.source}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-400">
+                          {start ? start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+                          {end ? ` → ${end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                          {w.durationM ? ` · ${w.durationM} min` : ""}
+                          {w.volumeLbs ? ` · ${Math.round(w.volumeLbs).toLocaleString()} lb volume` : ""}
+                        </p>
+                        {w.sets.length > 0 ? (
+                          <ul className="mt-3 space-y-1 text-sm">
+                            {w.sets.map((s) => (
+                              <li key={s.id} className="flex justify-between text-slate-200">
+                                <span>{s.exerciseName}</span>
+                                <span className="font-mono text-slate-300">
+                                  set {s.setNumber} · {s.reps ?? "—"} reps
+                                  {s.weightLbs ? ` @ ${s.weightLbs} lb` : ""}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mt-2 text-xs text-slate-500">
+                            Health Connect doesn&apos;t include sets/reps. Import Hevy CSV via{" "}
+                            <code className="font-mono text-slate-300">/api/import/hevy</code> for full set data.
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Card>
+
+            <Card title="Today's nutrition" subtitle="From Cronometer CSV import">
+              {todayNutrition.length === 0 ? (
+                <div className="text-sm text-slate-400">
+                  <p>No nutrition entries today.</p>
+                  {(protein || calories) && (
+                    <p className="mt-2">
+                      Phone reported daily totals: {calories ?? "—"} kcal · {protein ?? "—"}g protein. Import the
+                      Cronometer CSV to see individual foods.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <ul className="divide-y divide-white/5">
+                  {todayNutrition.map((n) => (
+                    <li key={n.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2 text-sm">
+                      <span className="font-medium text-white">{n.foodName}</span>
+                      <span className="font-mono text-slate-300">
+                        {n.calories ? `${Math.round(n.calories)} kcal` : "—"}
+                        {n.proteinG ? ` · ${Math.round(n.proteinG)}p` : ""}
+                        {n.carbsG ? ` / ${Math.round(n.carbsG)}c` : ""}
+                        {n.fatG ? ` / ${Math.round(n.fatG)}f` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
+            <Card title="Last 7 days">
+              {weekSnapshots.length === 0 ? (
+                <p className="text-sm text-slate-400">No daily snapshots yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-left text-sm">
+                    <thead className="text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="py-2 pr-3">Date</th>
+                        <th className="py-2 pr-3 text-right">Cal</th>
+                        <th className="py-2 pr-3 text-right">Protein</th>
+                        <th className="py-2 pr-3 text-right">Steps</th>
+                        <th className="py-2 pr-3 text-right">Sleep</th>
+                        <th className="py-2 pl-3 text-right">Workout</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {weekSnapshots.map((s) => (
+                        <tr key={s.id} className="text-slate-200">
+                          <td className="py-2 pr-3 font-medium">{formatDateOnly(s.date)}</td>
+                          <td className="py-2 pr-3 text-right font-mono">{s.calories ?? "—"}</td>
+                          <td className="py-2 pr-3 text-right font-mono">
+                            {s.proteinG ? Math.round(s.proteinG) : "—"}
+                          </td>
+                          <td className="py-2 pr-3 text-right font-mono">
+                            {s.steps ? s.steps.toLocaleString() : "—"}
+                          </td>
+                          <td className="py-2 pr-3 text-right font-mono">
+                            {s.sleepHours ? s.sleepHours.toFixed(1) : "—"}
+                          </td>
+                          <td className="py-2 pl-3 text-right text-slate-300">{s.workoutName ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
           </div>
 
-          <div className="space-y-6">
-            <div className="rounded-3xl border border-white/10 bg-panel p-6">
-              <h2 className="text-xl font-bold">Sync flow</h2>
-              <ol className="mt-4 list-decimal space-y-2 pl-5 text-slate-300">
-                <li>Android app reads Samsung Health on your phone.</li>
-                <li>Tap Sync Health Data.</li>
-                <li>Phone posts to <code className="text-glow">/api/sync/samsung</code>.</li>
-                <li>Cronometer CSV posts to <code className="text-glow">/api/import/cronometer</code>.</li>
-              </ol>
-            </div>
+          <div className="space-y-5">
+            <Card title="Body">
+              <dl className="space-y-2 text-sm">
+                <Row label="Resting HR" value={restingHr ? `${restingHr} bpm` : "—"} />
+                <Row label="Weight" value={weight ? `${weight} lb` : "—"} />
+                <Row label="Sleep quality" value={snapshot?.sleepQuality ?? "—"} />
+              </dl>
+            </Card>
 
-            {!hasSyncedData ? (
-              <div className="rounded-3xl border border-glow/30 bg-glow/10 p-6">
-                <h2 className="text-xl font-bold">Database is ready — send a test sync</h2>
-                <p className="mt-3 text-slate-200">
-                  If login redirects to this dashboard but metrics are blank, the app is working and waiting for imported data.
-                  Post a manual Samsung payload, then refresh this page.
+            <Card title="Notes" subtitle="Daily check-in">
+              <dl className="space-y-2 text-sm">
+                <Row label="Mood" value={note?.mood ?? "—"} />
+                <Row label="Soreness" value={note?.soreness ?? "—"} />
+                <Row label="Acne" value={note?.acne ?? "—"} />
+                <Row label="Weed" value={note?.weed ? "yes" : "no"} />
+                {note?.note ? <p className="pt-2 text-slate-300">{note.note}</p> : null}
+              </dl>
+            </Card>
+
+            <Card title="Recent syncs">
+              {logs.length === 0 ? (
+                <p className="text-sm text-slate-400">No syncs yet.</p>
+              ) : (
+                <ul className="space-y-2 text-sm">
+                  {logs.map((log) => {
+                    const ok = log.status === "success";
+                    return (
+                      <li
+                        key={log.id}
+                        className={`rounded-lg border px-3 py-2 ${
+                          ok
+                            ? "border-glow/20 bg-glow/5"
+                            : "border-rose-500/30 bg-rose-500/10"
+                        }`}
+                      >
+                        <p className={`font-semibold ${ok ? "text-glow" : "text-rose-300"}`}>
+                          {log.source} · {log.status}
+                        </p>
+                        <p className="text-xs text-slate-400">{log.createdAt.toLocaleString()}</p>
+                        {log.message ? (
+                          <p className="mt-1 text-slate-200">{log.message}</p>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Card>
+
+            {!hasAnyData ? (
+              <Card title="No data yet">
+                <p className="text-sm text-slate-300">
+                  Open the Android app, hit <span className="font-semibold">Sync Health Data</span>, then refresh
+                  this page.
                 </p>
-                <pre className="mt-4 overflow-auto rounded-2xl bg-black/50 p-4 text-xs text-emerald-100">
-                  {manualSyncCurl}
-                </pre>
-                <p className="mt-3 text-sm text-slate-300">
-                  Expected after refresh: Steps 28000, Sleep 7.4h, body metrics in the JSON, and a Samsung sync log.
-                </p>
-              </div>
+              </Card>
             ) : null}
-
-            <div className="rounded-3xl border border-white/10 bg-panel p-6">
-              <h2 className="text-xl font-bold">Latest sync logs</h2>
-              <div className="mt-4 space-y-3">
-                {logs.length ? logs.map((log) => (
-                  <div key={log.id} className="rounded-2xl bg-white/5 p-3 text-sm">
-                    <p className="font-semibold text-glow">{log.source} · {log.status}</p>
-                    <p className="text-slate-400">{log.createdAt.toISOString()}</p>
-                    {log.message ? <p className="text-slate-300">{log.message}</p> : null}
-                  </div>
-                )) : <p className="text-slate-400">No syncs yet.</p>}
-              </div>
-            </div>
           </div>
         </section>
       </div>
@@ -109,11 +278,57 @@ export default async function Dashboard() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Metric({
+  label,
+  value,
+  unit,
+  subtle,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  subtle?: boolean;
+}) {
   return (
-    <div className="rounded-3xl border border-white/10 bg-panel p-5">
-      <p className="text-sm text-slate-400">{label}</p>
-      <p className="mt-2 text-3xl font-black text-glow">{value}</p>
+    <div
+      className={`rounded-2xl border border-white/10 p-4 ${
+        subtle ? "bg-white/[0.03]" : "bg-panel"
+      }`}
+    >
+      <p className="text-xs font-medium uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="mt-2 flex items-baseline gap-1">
+        <span className={`text-2xl font-bold ${subtle ? "text-slate-100" : "text-glow"}`}>{value}</span>
+        {unit ? <span className="text-sm text-slate-400">{unit}</span> : null}
+      </p>
+    </div>
+  );
+}
+
+function Card({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-panel p-5">
+      <div className="mb-4">
+        <h2 className="text-base font-semibold text-white">{title}</h2>
+        {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-2 last:border-0 last:pb-0">
+      <dt className="text-slate-400">{label}</dt>
+      <dd className="text-right font-medium text-slate-100">{value}</dd>
     </div>
   );
 }
